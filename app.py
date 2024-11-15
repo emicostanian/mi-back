@@ -27,27 +27,44 @@ def index():
     return "¡Backend funcionando correctamente!"
 
 # -------------------- Login --------------------
-@app.route('/login', methods=['POST'])
+@app.route('/login', methods=['GET', 'POST'])
 def login():
     cursor = db.cursor(dictionary=True)
-    data = request.json
+    
+    if request.method == 'GET':
+        # Ejemplo para pruebas o devolver usuarios
+        correo = request.args.get('correo')
+        contraseña = request.args.get('contraseña')
+        if not correo or not contraseña:
+            return jsonify({"error": "El parámetro 'correo' y 'contraseña' es obligatorio"}), 400
 
-    # Validar que los campos estén presentes
-    correo = data.get('correo')
-    contraseña = data.get('contraseña')
+        # Busca usuario por correo
+        query = "SELECT * FROM login WHERE correo = %s"
+        cursor.execute(query, (correo,))
+        usuario = cursor.fetchone()
 
-    if not correo or not contraseña:
-        return jsonify({"error": "Faltan campos obligatorios (correo y contraseña)"}), 400
+        if usuario:
+            return jsonify({"correo": usuario['correo'], "message": "Usuario encontrado"}), 200
+        else:
+            return jsonify({"error": "Usuario no encontrado"}), 404
 
-    # Consulta a la base de datos para verificar las credenciales
-    query = "SELECT * FROM login WHERE correo = %s AND contraseña = %s"
-    cursor.execute(query, (correo, contraseña))
-    usuario = cursor.fetchone()
+    elif request.method == 'POST':
+        # Lógica de login habitual
+        data = request.json
+        correo = data.get('correo')
+        contraseña = data.get('contraseña')
 
-    if usuario:
-        return jsonify({"message": "Login exitoso", "correo": usuario['correo']}), 200
-    else:
-        return jsonify({"error": "Correo o contraseña inválidos"}), 401
+        if not correo or not contraseña:
+            return jsonify({"error": "Faltan campos obligatorios (correo y contraseña)"}), 400
+
+        query = "SELECT * FROM login WHERE correo = %s AND contraseña = %s"
+        cursor.execute(query, (correo, contraseña))
+        usuario = cursor.fetchone()
+
+        if usuario:
+            return jsonify({"message": "Login exitoso", "correo": usuario['correo']}), 200
+        else:
+            return jsonify({"error": "Correo o contraseña inválidos"}), 401
 
 # -------------------- ABM de Instructores --------------------
 @app.route('/instructores', methods=['GET', 'POST', 'PUT', 'DELETE'])
@@ -183,4 +200,4 @@ def reportes():
 
 # Iniciar servidor
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    app.run(debug=True, host='0.0.0.0', port=5000)
