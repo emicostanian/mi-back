@@ -1,7 +1,12 @@
+from flask_cors import CORS
 from flask import Flask, request, jsonify
 import mysql.connector
+import jwt
+import datetime
 
+secret_key = "mysecretkey"
 app = Flask(__name__)
+CORS(app, origins=["http://localhost:5173"])
 
 # Configuración de la base de datos
 db = mysql.connector.connect(
@@ -27,25 +32,32 @@ def index():
     return "¡Backend funcionando correctamente!"
 
 # -------------------- Login --------------------
+
 @app.route('/login', methods=['POST'])
 def login():
     cursor = db.cursor(dictionary=True)
     data = request.json
 
-    # Validar que los campos estén presentes
     correo = data.get('correo')
     contraseña = data.get('contraseña')
 
     if not correo or not contraseña:
         return jsonify({"error": "Faltan campos obligatorios (correo y contraseña)"}), 400
 
-    # Consulta a la base de datos para verificar las credenciales
     query = "SELECT * FROM login WHERE correo = %s AND contraseña = %s"
     cursor.execute(query, (correo, contraseña))
     usuario = cursor.fetchone()
 
     if usuario:
-        return jsonify({"message": "Login exitoso", "correo": usuario['correo']}), 200
+        # Crear un token JWT
+        payload = {
+            'user': usuario['correo'],
+            'role': usuario['role'],  # Suponiendo que 'role' esté presente en la tabla
+            'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=1)  # Expiración de 1 hora
+        }
+        token = jwt.encode(payload, secret_key, algorithm='HS256')
+
+        return jsonify({"message": "Login exitoso", "token": token, "role": usuario['role']}), 200
     else:
         return jsonify({"error": "Correo o contraseña inválidos"}), 401
 
