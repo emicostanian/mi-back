@@ -4,9 +4,9 @@ import mysql.connector
 import jwt
 import datetime
 
-secret_key = "mysecretkey"
 app = Flask(__name__)
-CORS(app, origins=["http://localhost:5173"])
+CORS(app)
+SECRET_KEY = '648488465184481'
 
 # Configuración de la base de datos
 db = mysql.connector.connect(
@@ -32,38 +32,75 @@ def index():
     return "¡Backend funcionando correctamente!"
 
 # -------------------- Login --------------------
-
 @app.route('/login', methods=['POST'])
 def login():
     cursor = db.cursor(dictionary=True)
     data = request.json
 
+    # Validar que los campos estén presentes
     correo = data.get('correo')
     contraseña = data.get('contraseña')
 
     if not correo or not contraseña:
         return jsonify({"error": "Faltan campos obligatorios (correo y contraseña)"}), 400
 
+    # Consulta a la base de datos para verificar las credenciales
     query = "SELECT * FROM login WHERE correo = %s AND contraseña = %s"
     cursor.execute(query, (correo, contraseña))
     usuario = cursor.fetchone()
 
     if usuario:
-        # Crear un token JWT
-        payload = {
-            'user': usuario['correo'],
-            'role': usuario['role'],  # Suponiendo que 'role' esté presente en la tabla
-            'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=1)  # Expiración de 1 hora
-        }
-        token = jwt.encode(payload, secret_key, algorithm='HS256')
+        # Determinar el rol según el dominio del correo
+        if '@correo.ucu.edu.uy' in correo:
+            rol = 'student'
+        elif '@ucu.edu.uy' in correo:
+            rol = 'instructor'
+        else:
+            rol = 'Desconocido'  # O cualquier valor por defecto si no corresponde a ninguno
 
-        return jsonify({"message": "Login exitoso", "token": token, "role": usuario['role']}), 200
+        # Generar el token JWT
+        payload = {
+            "correo": usuario['correo'],
+            "rol": rol,
+            "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=5)  # El token expirará en 1 hora
+        }
+        token = jwt.encode(payload, SECRET_KEY, algorithm="HS256")
+
+        return jsonify({
+            "message": "Login exitoso",
+            "token": token,  # Devolver el token generado
+            "role": rol
+        }), 200
     else:
         return jsonify({"error": "Correo o contraseña inválidos"}), 401
+    
+def verificar_token():
+    # Obtener el token del encabezado Authorization
+    token = request.headers.get('Authorization')
+
+    if not token:
+        return jsonify({"error": "Token no proporcionado"}), 403
+
+    try:
+        # Eliminar el prefijo 'Bearer ' si existe
+        token = token.replace("Bearer ", "")
+
+        # Verificar el token usando la clave secreta
+        decoded = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        return decoded  # Retornar el payload decodificado
+    except jwt.ExpiredSignatureError:
+        return jsonify({"error": "El token ha expirado"}), 403
+    except jwt.InvalidTokenError:
+        return jsonify({"error": "Token inválido"}), 403
+
 
 # -------------------- ABM de Instructores --------------------
 @app.route('/instructores', methods=['GET', 'POST', 'PUT', 'DELETE'])
 def instructores():
+     # Verificar el token antes de ejecutar la lógica
+    decoded_token = verificar_token()
+    if isinstance(decoded_token, tuple):  # Si la respuesta es un error
+        return decoded_token
     cursor = db.cursor(dictionary=True)
     if request.method == 'GET':
         cursor.execute("SELECT * FROM instructores")
@@ -116,27 +153,27 @@ def turnos():
         return jsonify({"message": "Turno eliminado exitosamente"})
 
 # -------------------- ABM de Clases --------------------
-@app.route('/clases', methods=['GET', 'POST', 'PUT', 'DELETE'])
-def clases():
+@app.route('/actividades', methods=['GET', 'POST', 'PUT', 'DELETE'])
+def actividades():
     cursor = db.cursor(dictionary=True)
     if request.method == 'GET':
-        cursor.execute("SELECT * FROM clases")
+        cursor.execute("SELECT * FROM actividades")
         return jsonify(cursor.fetchall()), 200
     elif request.method == 'POST':
         data = request.json
-        query = "INSERT INTO clases (title, description, players, categories) VALUES (%s, %s, %s, %s)"
+        query = "INSERT INTO actividades (title, description, players, categories) VALUES (%s, %s, %s, %s)"
         cursor.execute(query, (data['title'], data['description'], data['players'], data['categories']))
         db.commit()
         return jsonify({"message": "Clase creada exitosamente"}), 201
     elif request.method == 'PUT':
         data = request.json
-        query = "UPDATE clases SET title=%s, description=%s, players=%s, categories=%s WHERE id=%s"
+        query = "UPDATE actividades SET title=%s, description=%s, players=%s, categories=%s WHERE id=%s"
         cursor.execute(query, (data['title'], data['description'], data['players'], data['categories'], data['id']))
         db.commit()
         return jsonify({"message": "Clase actualizada exitosamente"}), 200
     elif request.method == 'DELETE':
         class_id = request.args.get('id')
-        cursor.execute("DELETE FROM clases WHERE id=%s", (class_id,))
+        cursor.execute("DELETE FROM actividades WHERE id=%s", (class_id,))
         db.commit()
         return jsonify({"message": "Clase eliminada exitosamente"}), 200
 
