@@ -171,27 +171,27 @@ def turnos():
         return jsonify({"message": "Turno eliminado exitosamente"})
 
 # -------------------- ABM de Clases --------------------
-@app.route('/activities', methods=['GET', 'POST', 'PUT', 'DELETE'])
-def activities():
+@app.route('/actividades', methods=['GET', 'POST', 'PUT', 'DELETE'])
+def actividades():
     cursor = db.cursor(dictionary=True)
     if request.method == 'GET':
-        cursor.execute("SELECT * FROM activities")
+        cursor.execute("SELECT * FROM actividades")
         return jsonify(cursor.fetchall()), 200
     elif request.method == 'POST':
         data = request.json
-        query = "INSERT INTO activities (title, description, players, categories) VALUES (%s, %s, %s, %s)"
+        query = "INSERT INTO actividades (title, description, players, categories) VALUES (%s, %s, %s, %s)"
         cursor.execute(query, (data['title'], data['description'], data['players'], data['categories']))
         db.commit()
         return jsonify({"message": "Clase creada exitosamente"}), 201
     elif request.method == 'PUT':
         data = request.json
-        query = "UPDATE activities SET title=%s, description=%s, players=%s, categories=%s WHERE id=%s"
+        query = "UPDATE actividades SET title=%s, description=%s, players=%s, categories=%s WHERE id=%s"
         cursor.execute(query, (data['title'], data['description'], data['players'], data['categories'], data['id']))
         db.commit()
         return jsonify({"message": "Clase actualizada exitosamente"}), 200
     elif request.method == 'DELETE':
         class_id = request.args.get('id')
-        cursor.execute("DELETE FROM activities WHERE id=%s", (class_id,))
+        cursor.execute("DELETE FROM actividades WHERE id=%s", (class_id,))
         db.commit()
         return jsonify({"message": "Clase eliminada exitosamente"}), 200
 
