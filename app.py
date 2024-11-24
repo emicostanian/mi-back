@@ -92,6 +92,24 @@ def verificar_token():
         return jsonify({"error": "El token ha expirado"}), 403
     except jwt.InvalidTokenError:
         return jsonify({"error": "Token inválido"}), 403
+    
+@app.route('/clases/<int:id_actividad>', methods=['GET'])
+def obtener_clases_por_actividad(id_actividad):
+    cursor = db.cursor(dictionary=True)
+    try:
+        query = """
+            SELECT c.id, c.fecha_clase, c.tipo_clase, c.dictada, 
+                   i.nombre AS instructor_nombre, i.apellido AS instructor_apellido 
+            FROM clase c
+            JOIN instructores i ON c.ci_instructor = i.ci
+            WHERE c.id_actividad = %s
+        """
+        cursor.execute(query, (id_actividad,))
+        clases = cursor.fetchall()
+        return jsonify(clases), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 
 
 # -------------------- ABM de Instructores --------------------
@@ -153,27 +171,27 @@ def turnos():
         return jsonify({"message": "Turno eliminado exitosamente"})
 
 # -------------------- ABM de Clases --------------------
-@app.route('/actividades', methods=['GET', 'POST', 'PUT', 'DELETE'])
-def actividades():
+@app.route('/activities', methods=['GET', 'POST', 'PUT', 'DELETE'])
+def activities():
     cursor = db.cursor(dictionary=True)
     if request.method == 'GET':
-        cursor.execute("SELECT * FROM actividades")
+        cursor.execute("SELECT * FROM activities")
         return jsonify(cursor.fetchall()), 200
     elif request.method == 'POST':
         data = request.json
-        query = "INSERT INTO actividades (title, description, players, categories) VALUES (%s, %s, %s, %s)"
+        query = "INSERT INTO activities (title, description, players, categories) VALUES (%s, %s, %s, %s)"
         cursor.execute(query, (data['title'], data['description'], data['players'], data['categories']))
         db.commit()
         return jsonify({"message": "Clase creada exitosamente"}), 201
     elif request.method == 'PUT':
         data = request.json
-        query = "UPDATE actividades SET title=%s, description=%s, players=%s, categories=%s WHERE id=%s"
+        query = "UPDATE activities SET title=%s, description=%s, players=%s, categories=%s WHERE id=%s"
         cursor.execute(query, (data['title'], data['description'], data['players'], data['categories'], data['id']))
         db.commit()
         return jsonify({"message": "Clase actualizada exitosamente"}), 200
     elif request.method == 'DELETE':
         class_id = request.args.get('id')
-        cursor.execute("DELETE FROM actividades WHERE id=%s", (class_id,))
+        cursor.execute("DELETE FROM activities WHERE id=%s", (class_id,))
         db.commit()
         return jsonify({"message": "Clase eliminada exitosamente"}), 200
 
