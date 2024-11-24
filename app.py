@@ -92,6 +92,24 @@ def verificar_token():
         return jsonify({"error": "El token ha expirado"}), 403
     except jwt.InvalidTokenError:
         return jsonify({"error": "Token inválido"}), 403
+    
+@app.route('/clases/<int:id_actividad>', methods=['GET'])
+def obtener_clases_por_actividad(id_actividad):
+    cursor = db.cursor(dictionary=True)
+    try:
+        query = """
+            SELECT c.id, c.fecha_clase, c.tipo_clase, c.dictada, 
+                   i.nombre AS instructor_nombre, i.apellido AS instructor_apellido 
+            FROM clase c
+            JOIN instructores i ON c.ci_instructor = i.ci
+            WHERE c.id_actividad = %s
+        """
+        cursor.execute(query, (id_actividad,))
+        clases = cursor.fetchall()
+        return jsonify(clases), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 
 
 # -------------------- ABM de Instructores --------------------
