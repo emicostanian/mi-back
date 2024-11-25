@@ -55,6 +55,8 @@ def login():
             rol = 'student'
         elif '@ucu.edu.uy' in correo:
             rol = 'instructor'
+        elif '@gmail.com' in correo:
+            rol = 'administrador'
         else:
             rol = 'Desconocido'  # O cualquier valor por defecto si no corresponde a ninguno
 
@@ -110,6 +112,34 @@ def obtener_clases_por_actividad(id_actividad):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route('/inscripciones', methods=['GET'])
+def obtener_inscripciones():
+    cursor = db.cursor(dictionary=True)
+    try:
+        query = """
+            SELECT 
+                ac.id_clase,
+                a.ci AS alumno_ci,
+                a.nombre AS alumno_nombre,
+                a.apellido AS alumno_apellido,
+                c.fecha_clase,
+                c.tipo_clase,
+                c.dictada,
+                ac.costo_total
+            FROM 
+                alumno_clase ac
+            JOIN 
+                alumnos a ON ac.ci_alumno = a.ci
+            JOIN 
+                clase c ON ac.id_clase = c.id;
+        """
+        cursor.execute(query)
+        inscripciones = cursor.fetchall()
+        return jsonify(inscripciones), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 
 
 # -------------------- ABM de Instructores --------------------
@@ -140,6 +170,106 @@ def instructores():
         cursor.execute("DELETE FROM instructores WHERE ci=%s", (ci,))
         db.commit()
         return jsonify({"message": "Instructor eliminado exitosamente"})
+    
+@app.route('/clases_estado/<int:ci_alumno>', methods=['GET'])
+def obtener_clases_estado_para_alumno(ci_alumno):
+    cursor = db.cursor(dictionary=True)
+    try:
+        query = """
+            SELECT 
+                c.id AS clase_id,
+                c.fecha_clase,
+                c.tipo_clase,
+                c.dictada,
+                i.nombre AS instructor_nombre,
+                i.apellido AS instructor_apellido,
+                t.hora_inicio AS turno_inicio,
+                t.hora_fin AS turno_fin,
+                CASE
+                    WHEN ac.ci_alumno IS NOT NULL THEN 'Inscrito'
+                    ELSE 'No Inscrito'
+                END AS estado_inscripcion
+            FROM clase c
+            JOIN turnos t ON c.id_turno = t.id
+            JOIN instructores i ON c.ci_instructor = i.ci
+            LEFT JOIN alumno_clase ac ON c.id = ac.id_clase AND ac.ci_alumno = %s
+        """
+        cursor.execute(query, (ci_alumno,))
+        clases = cursor.fetchall()
+        
+        # Serializar campos de tiempo
+        for clase in clases:
+            clase['turno_inicio'] = serialize_timedelta(clase['turno_inicio'])
+            clase['turno_fin'] = serialize_timedelta(clase['turno_fin'])
+        
+        return jsonify(clases), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/clases/disponibles', methods=['GET'])
+def obtener_clases_disponibles():
+    cursor = db.cursor(dictionary=True)
+    try:
+        query = """
+            SELECT c.id, c.fecha_clase, c.tipo_clase, c.dictada, 
+                   i.nombre AS instructor_nombre, i.apellido AS instructor_apellido,
+                   a.descripcion AS actividad
+            FROM clase c
+            JOIN instructores i ON c.ci_instructor = i.ci
+            JOIN actividades a ON c.id_actividad = a.id
+            WHERE c.dictada = 0  -- Clases no dictadas
+        """
+        cursor.execute(query)
+        clases = cursor.fetchall()
+        return jsonify(clases), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+@app.route('/clases/<int:id>/inscribirse', methods=['POST'])
+def inscribirse_a_clase():
+    cursor = db.cursor(dictionary=True)
+    data = request.json
+
+    ci_alumno = data.get('ci_alumno')  # Cédula del alumno
+    id_clase = data.get('id_clase')  # ID de la clase
+
+    if not ci_alumno or not id_clase:
+        return jsonify({"error": "Faltan campos obligatorios (ci_alumno, id_clase)"}), 400
+
+    try:
+        # Verificar si el alumno ya está inscrito en la clase
+        query_verificar = "SELECT * FROM alumno_clase WHERE ci_alumno = %s AND id_clase = %s"
+        cursor.execute(query_verificar, (ci_alumno, id_clase))
+        if cursor.fetchone():
+            return jsonify({"error": "Ya estás inscrito en esta clase"}), 400
+
+        # Inscribir al alumno
+        query_inscribir = "INSERT INTO alumno_clase (ci_alumno, id_clase) VALUES (%s, %s)"
+        cursor.execute(query_inscribir, (ci_alumno, id_clase))
+        db.commit()
+        return jsonify({"message": "Inscripción exitosa"}), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/clases/inscritas/<int:ci_alumno>', methods=['GET'])
+def obtener_clases_inscritas(ci_alumno):
+    cursor = db.cursor(dictionary=True)
+    try:
+        query = """
+            SELECT c.id, c.fecha_clase, c.tipo_clase, 
+                   a.descripcion AS actividad,
+                   i.nombre AS instructor_nombre, i.apellido AS instructor_apellido
+            FROM alumno_clase ac
+            JOIN clase c ON ac.id_clase = c.id
+            JOIN actividades a ON c.id_actividad = a.id
+            JOIN instructores i ON c.ci_instructor = i.ci
+            WHERE ac.ci_alumno = %s
+        """
+        cursor.execute(query, (ci_alumno,))
+        clases = cursor.fetchall()
+        return jsonify(clases), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 # -------------------- ABM de Turnos --------------------
 @app.route('/turnos', methods=['GET', 'POST', 'PUT', 'DELETE'])
