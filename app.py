@@ -256,6 +256,73 @@ def inscribirse_a_clase():
         return jsonify({"message": "Inscripción exitosa"}), 201
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+    
+@app.route('/equipamiento/disponible', methods=['GET'])
+def obtener_equipamiento_disponible():
+    """Obtener lista de equipamiento disponible para alquiler."""
+    cursor = db.cursor(dictionary=True)
+    try:
+        query = "SELECT * FROM equipamiento WHERE disponible = 1"
+        cursor.execute(query)
+        equipamiento = cursor.fetchall()
+        return jsonify(equipamiento), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/equipamiento/alquilar', methods=['POST'])
+def alquilar_equipamiento():
+    """Registrar un alquiler de equipamiento para un alumno."""
+    cursor = db.cursor(dictionary=True)
+    data = request.json
+
+    ci_alumno = data.get('ci_alumno')
+    id_equipamiento = data.get('id_equipamiento')
+
+    if not ci_alumno or not id_equipamiento:
+        return jsonify({"error": "Faltan campos obligatorios (ci_alumno, id_equipamiento)"}), 400
+
+    try:
+        # Verificar si el equipo está disponible
+        query_disponible = "SELECT * FROM equipamiento WHERE id = %s AND disponible = 1"
+        cursor.execute(query_disponible, (id_equipamiento,))
+        equipamiento = cursor.fetchone()
+
+        if not equipamiento:
+            return jsonify({"error": "El equipamiento no está disponible"}), 400
+
+        # Registrar el alquiler
+        query_alquilar = """
+            INSERT INTO alumno_equipamiento (ci_alumno, id_equipamiento, fecha_alquiler)
+            VALUES (%s, %s, NOW())
+        """
+        cursor.execute(query_alquilar, (ci_alumno, id_equipamiento))
+        
+        # Marcar el equipo como no disponible
+        query_actualizar = "UPDATE equipamiento SET disponible = 0 WHERE id = %s"
+        cursor.execute(query_actualizar, (id_equipamiento,))
+
+        db.commit()
+        return jsonify({"message": "Equipamiento alquilado con éxito"}), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/equipamiento/alquilado/<int:ci_alumno>', methods=['GET'])
+def obtener_equipamiento_alquilado(ci_alumno):
+    """Obtener lista de equipos alquilados por un alumno."""
+    cursor = db.cursor(dictionary=True)
+    try:
+        query = """
+            SELECT ae.id_equipamiento, e.nombre, e.descripcion, ae.fecha_alquiler
+            FROM alumno_equipamiento ae
+            JOIN equipamiento e ON ae.id_equipamiento = e.id
+            WHERE ae.ci_alumno = %s
+        """
+        cursor.execute(query, (ci_alumno,))
+        alquilado = cursor.fetchall()
+        return jsonify(alquilado), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 
 
 @app.route('/clases/inscritas/<int:ci_alumno>', methods=['GET'])
@@ -306,6 +373,31 @@ def turnos():
         cursor.execute("DELETE FROM turnos WHERE id=%s", (turno_id,))
         db.commit()
         return jsonify({"message": "Turno eliminado exitosamente"})
+
+@app.route('/api/alumno/ci', methods=['GET'])
+def obtener_ci_alumno():
+    """Devuelve el CI del alumno autenticado o relacionado."""
+    # Obtener el token para identificar al usuario (si aplica)
+    decoded_token = verificar_token()
+    if isinstance(decoded_token, tuple):  # Si la respuesta es un error
+        return decoded_token
+
+    # Aquí asumimos que el token incluye el correo o identificación del usuario
+    correo = decoded_token.get('correo')  # Ejemplo: recuperar correo del token
+
+    cursor = db.cursor(dictionary=True)
+    try:
+        # Buscar el CI del alumno usando su correo (u otro identificador)
+        query = "SELECT ci FROM alumnos WHERE correo = %s"
+        cursor.execute(query, (correo,))
+        alumno = cursor.fetchone()
+
+        if not alumno:
+            return jsonify({"error": "Alumno no encontrado"}), 404
+
+        return jsonify({"ci": alumno['ci']}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 # -------------------- ABM de Clases --------------------
 @app.route('/actividades', methods=['GET', 'POST', 'PUT', 'DELETE'])
