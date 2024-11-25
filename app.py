@@ -143,7 +143,7 @@ def obtener_inscripciones():
 
 
 # -------------------- ABM de Instructores --------------------
-@app.route('/instructores', methods=['GET', 'POST', 'PUT', 'DELETE'])
+@app.route('/instructores', methods=['GET'])
 def instructores():
      # Verificar el token antes de ejecutar la lógica
     decoded_token = verificar_token()
@@ -153,23 +153,6 @@ def instructores():
     if request.method == 'GET':
         cursor.execute("SELECT * FROM instructores")
         return jsonify(cursor.fetchall())
-    elif request.method == 'POST':
-        data = request.json
-        cursor.execute("INSERT INTO instructores (ci, nombre, apellido) VALUES (%s, %s, %s)",
-                       (data['ci'], data['nombre'], data['apellido']))
-        db.commit()
-        return jsonify({"message": "Instructor creado exitosamente"}), 201
-    elif request.method == 'PUT':
-        data = request.json
-        cursor.execute("UPDATE instructores SET nombre=%s, apellido=%s WHERE ci=%s",
-                       (data['nombre'], data['apellido'], data['ci']))
-        db.commit()
-        return jsonify({"message": "Instructor actualizado exitosamente"})
-    elif request.method == 'DELETE':
-        ci = request.args.get('ci')
-        cursor.execute("DELETE FROM instructores WHERE ci=%s", (ci,))
-        db.commit()
-        return jsonify({"message": "Instructor eliminado exitosamente"})
     
 @app.route('/clases_estado/<int:ci_alumno>', methods=['GET'])
 def obtener_clases_estado_para_alumno(ci_alumno):
@@ -205,6 +188,26 @@ def obtener_clases_estado_para_alumno(ci_alumno):
         return jsonify(clases), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+@app.route('/verificar_inscripcion', methods=['POST'])
+def verificar_inscripcion():
+    data = request.json
+    ci_alumno = data.get('ci_alumno')
+    id_clase = data.get('id_clase')
+    cursor = db.cursor(dictionary=True)
+    try:
+        query = """
+            SELECT * FROM alumno_clase
+            WHERE ci_alumno = %s AND id_clase = %s
+        """
+        cursor.execute(query, (ci_alumno, id_clase))
+        inscripcion = cursor.fetchone()
+        if inscripcion:
+            return jsonify({"inscripto": True}), 200
+        else:
+            return jsonify({"inscripto": False}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 
 @app.route('/clases/disponibles', methods=['GET'])
 def obtener_clases_disponibles():
@@ -224,6 +227,10 @@ def obtener_clases_disponibles():
         return jsonify(clases), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+   
+
+
+
 @app.route('/clases/<int:id>/inscribirse', methods=['POST'])
 def inscribirse_a_clase():
     cursor = db.cursor(dictionary=True)
