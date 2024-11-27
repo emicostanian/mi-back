@@ -45,10 +45,10 @@ def login():
         return jsonify({"error": "Faltan campos obligatorios (correo y contraseña)"}), 400
 
     # Consulta a la base de datos para verificar las credenciales
-    query = "SELECT * FROM login WHERE correo = %s AND contraseña = %s"
+    query = "SELECT l.correo, l.contraseña, a.ci  FROM login l JOIN alumnos a ON l.correo = a.correo WHERE l.correo = %s AND l.contraseña = %s"
     cursor.execute(query, (correo, contraseña))
     usuario = cursor.fetchone()
-
+    print(cursor)
     if usuario:
         # Determinar el rol según el dominio del correo
         if '@correo.ucu.edu.uy' in correo:
@@ -64,14 +64,16 @@ def login():
         payload = {
             "correo": usuario['correo'],
             "rol": rol,
-            "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=5)  # El token expirará en 1 hora
+            "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=5),  # El token expirará en 1 hora
+            "ci": usuario["ci"]
         }
         token = jwt.encode(payload, SECRET_KEY, algorithm="HS256")
-
+        cedula = usuario["ci"]
         return jsonify({
             "message": "Login exitoso",
             "token": token,  # Devolver el token generado
-            "role": rol
+            "role": rol, 
+            "ci": cedula
         }), 200
     else:
         return jsonify({"error": "Correo o contraseña inválidos"}), 401
@@ -232,12 +234,15 @@ def obtener_clases_disponibles():
 
 
 @app.route('/clases/<int:id>/inscribirse', methods=['POST'])
-def inscribirse_a_clase():
+def inscribirse_a_clase(id):
+    
     cursor = db.cursor(dictionary=True)
     data = request.json
-
+    print(request)
+    print(data)
+    print(id)
     ci_alumno = data.get('ci_alumno')  # Cédula del alumno
-    id_clase = data.get('id_clase')  # ID de la clase
+    id_clase = id
 
     if not ci_alumno or not id_clase:
         return jsonify({"error": "Faltan campos obligatorios (ci_alumno, id_clase)"}), 400
