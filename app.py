@@ -299,68 +299,50 @@ def obtener_equipamiento_por_actividad(id_actividad):
         return jsonify(equipamiento), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
+    
 @app.route('/equipamiento/<int:id_equipamiento>/reservar', methods=['POST'])
-def alquilar_equipamiento(id_equipamiento):
+def reservar_equipamiento(id_equipamiento):
     """Registrar el alquiler de un equipamiento."""
-    data = request.get_json()
-    ci = data.get('ci')
-    id_clase = data.get('id_clase')
-    id_equipamiento = data.get('equipamientoId')
-    if not ci or not id_clase:
-        return jsonify({"error": "Datos incompletos. Se requiere 'ci' y 'id_clase'"}), 400
+    data = request.json
+    ci_alumno = data.get('ci')  # Cédula del alumno que alquila el equipamiento
+    fecha_reserva = data.get('fecha_reserva')  # Fecha del alquiler (opcional)
 
-    cursor = db.cursor(dictionary=True)  # Asegúrate de usar un cursor que devuelva diccionarios
+    if not ci_alumno:
+        return jsonify({"error": "La cédula del alumno es requerida"}), 400
+
+    if not fecha_reserva:
+        fecha_reserva = datetime.date.today()  # Fecha por defecto: hoy
+
+    cursor = db.cursor(dictionary=True)
     try:
-        # Validar que el equipamiento exista
-        cursor.execute("SELECT * FROM equipamiento WHERE id = %s", (id_equipamiento,))
-        equipamiento = cursor.fetchone()
-        if not equipamiento:
-            return jsonify({"error": "Equipamiento no encontrado"}), 404
-
-        # Validar existencia de alumno y clase
-        cursor.execute("SELECT * FROM alumnos WHERE ci = %s", (ci,))
-        if not cursor.fetchone():
-            return jsonify({"error": "Alumno no encontrado"}), 404
-
-        cursor.execute("SELECT * FROM clase WHERE id = %s", (id_clase,))
-        if not cursor.fetchone():
-            return jsonify({"error": "Clase no encontrada"}), 404
-
-        # Verificar si el equipamiento ya está reservado para la misma clase
-        query_verificar_reserva = """
-        SELECT * FROM reservas_equipamiento
-        WHERE id_equipamiento = %s AND id_clase = %s
+        # Verifica si el equipamiento ya está reservado
+        query_check = """
+        SELECT COUNT(*) AS total 
+        FROM reservas_equipamiento 
+        WHERE id_equipamiento = %s AND fecha_reserva = %s
         """
-        cursor.execute(query_verificar_reserva, (id_equipamiento, id_clase))
-        if cursor.fetchone():
-            return jsonify({"error": "El equipamiento ya está reservado para esta clase"}), 400
+        cursor.execute(query_check, (id_equipamiento, fecha_reserva))
+        result = cursor.fetchone()
 
-        # Registrar el alquiler
-        query_reserva = """
-        INSERT INTO reservas_equipamiento (id_equipamiento, ci, fecha_reserva, id_clase)
-        VALUES (%s, %s, CURDATE(), %s)
+        if result['total'] > 0:
+            return jsonify({"error": "El equipamiento ya está reservado para esta fecha"}), 400
+
+        # Inserta una nueva reserva
+        query_insert = """
+        INSERT INTO reservas_equipamiento (id_equipamiento, ci_alumno, fecha_reserva) 
+        VALUES (%s, %s, %s)
         """
-        cursor.execute(query_reserva, (id_equipamiento, ci, id_clase))
+        cursor.execute(query_insert, (id_equipamiento, ci_alumno, fecha_reserva))
         db.commit()
 
-        # Recuperar fecha actual directamente desde CURDATE()
-        cursor.execute("SELECT CURDATE() AS fecha_reserva")
-        fecha_reserva = cursor.fetchone()["fecha_reserva"]
+        return jsonify({"message": "Equipamiento reservado con éxito"}), 200
 
-        return jsonify({
-            "message": "Equipamiento alquilado con éxito",
-            "reserva": {
-                "id_equipamiento": id_equipamiento,
-                "ci": ci,
-                "fecha_reserva": str(fecha_reserva),
-                "id_clase": id_clase
-            }
-        }), 201
     except Exception as e:
         db.rollback()
         return jsonify({"error": str(e)}), 500
-    
+    finally:
+        cursor.close()
+
 
 
 
@@ -399,6 +381,9 @@ def obtener_clases_inscritas(ci):
         """
         cursor.execute(query, (ci,))
         clases = cursor.fetchall()
+        for clase in clases:
+            clase['hora_inicio'] = serialize_timedelta(clase['hora_inicio'])
+            clase['hora_fin'] = serialize_timedelta(clase['hora_fin'])
         return jsonify(clases), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -481,46 +466,6 @@ def actividades():
         cursor.execute("DELETE FROM actividades WHERE id=%s", (class_id,))
         db.commit()
         return jsonify({"message": "Clase eliminada exitosamente"}), 200
-@app.route('/equipamiento/<int:id_equipamiento>/reservar', methods=['POST'])
-def reservar_equipamiento(id_equipamiento):
-    """Registrar el alquiler de un equipamiento."""
-    data = request.json
-    ci_alumno = data.get('ci')  # Cédula del alumno que alquila el equipamiento
-    fecha_reserva = data.get('fecha_reserva')  # Fecha del alquiler (opcional)
-
-    if not ci_alumno:
-        return jsonify({"error": "La cédula del alumno es requerida"}), 400
-
-    if not fecha_reserva:
-        fecha_reserva = datetime.date.today()  # Fecha por defecto: hoy
-
-    cursor = db.cursor()
-    try:
-        # Verifica si el equipamiento ya está reservado
-        query_check = """
-        SELECT COUNT(*) AS total 
-        FROM reservas_equipamiento 
-        WHERE id_equipamiento = %s AND fecha_reserva = %s
-        """
-        cursor.execute(query_check, (id_equipamiento, fecha_reserva))
-        result = cursor.fetchone()
-
-        if result['total'] > 0:
-            return jsonify({"error": "El equipamiento ya está reservado para esta fecha"}), 400
-
-        # Inserta una nueva reserva
-        query_insert = """
-        INSERT INTO reservas_equipamiento (id_equipamiento, ci, fecha_reserva) 
-        VALUES (%s, %s, %s)
-        """
-        cursor.execute(query_insert, (id_equipamiento, ci_alumno, fecha_reserva))
-        db.commit()
-
-        return jsonify({"message": "Equipamiento reservado con éxito"}), 200
-    except Exception as e:
-        db.rollback()
-        return jsonify({"error": str(e)}), 500
-
 
 # -------------------- Reportes --------------------
 @app.route('/reportes', methods=['GET'])
