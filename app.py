@@ -290,6 +290,7 @@ def reservar_equipamiento(id_equipamiento):
         fecha_reserva = datetime.date.today()  # Fecha por defecto: hoy
 
     cursor = db.cursor()
+    cursor = db.cursor(dictionary=True)
     try:
         # Verifica si el equipamiento ya está reservado
         query_check = """
