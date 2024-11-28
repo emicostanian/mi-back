@@ -261,6 +261,7 @@ def inscribirse_a_clase(id):
         return jsonify({"message": "Inscripción exitosa"}), 201
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+    
 @app.route('/equipamiento/<int:id_actividad>', methods=['GET'])
 def obtener_equipamiento_por_actividad(id_actividad):
     """Obtener lista de equipamiento disponible por actividad."""
@@ -276,6 +277,7 @@ def obtener_equipamiento_por_actividad(id_actividad):
         return jsonify(equipamiento), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+    
 @app.route('/equipamiento/<int:id_equipamiento>/reservar', methods=['POST'])
 def reservar_equipamiento(id_equipamiento):
     """Registrar el alquiler de un equipamiento."""
@@ -316,6 +318,7 @@ def reservar_equipamiento(id_equipamiento):
     except Exception as e:
         db.rollback()
         return jsonify({"error": str(e)}), 500
+    
 @app.route('/equipamiento/<int:id_actividad>/disponibles', methods=['GET'])
 def obtener_equipamiento_disponible(id_actividad):
     """Obtener lista de equipamiento no reservado para una actividad."""
@@ -335,7 +338,81 @@ def obtener_equipamiento_disponible(id_actividad):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route('/reservas', methods=['GET'])
+def obtener_reservas():
+    """Obtener todas las reservas de equipamiento con detalles de la clase y fechas."""
+    # Obtener el nombre del alumno que está autenticado (esto depende de tu sistema de autenticación)
+    # Este es un ejemplo usando un parámetro de query, pero podría venir de un JWT o de la sesión
+    nombre_alumno = request.args.get('nombre_alumno')  # O extrae esto de tu sistema de autenticación
 
+    cursor = db.cursor(dictionary=True)
+    try:
+        query = """
+        SELECT 
+            re.id_reserva,
+            e.descripcion AS nombre_equipamiento,
+            a.nombre AS nombre_alumno,
+            a.apellido AS apellido_alumno,
+            re.ci_alumno,
+            re.fecha_reserva,
+            c.fecha_clase,
+            c.tipo_clase,
+            i.nombre AS nombre_instructor
+        FROM reservas_equipamiento re
+        JOIN alumnos a ON re.ci_alumno = a.ci
+        JOIN equipamiento e ON re.id_equipamiento = e.id
+        JOIN clase c ON re.id_clase = c.id
+        JOIN instructores i ON c.ci_instructor = i.ci
+        """
+        cursor.execute(query)
+        reservas = cursor.fetchall()
+
+        # Filtrar las reservas para solo mostrar las del alumno autenticado
+        reservas_filtradas = [reserva for reserva in reservas if reserva['nombre_alumno'] == nombre_alumno]
+
+        return jsonify(reservas_filtradas), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+
+@app.route('/reservas', methods=['POST'])
+def registrar_reserva():
+    """Registrar una nueva reserva de equipamiento."""
+    data = request.json
+    id_equipamiento = data.get('id_equipamiento')
+    ci_alumno = data.get('ci_alumno')
+    fecha_reserva = data.get('fecha_reserva')
+    id_clase = data.get('id_clase')
+
+    if not id_equipamiento or not ci_alumno or not fecha_reserva:
+        return jsonify({"error": "Faltan campos obligatorios (id_equipamiento, ci_alumno, fecha_reserva)"}), 400
+
+    cursor = db.cursor()
+    try:
+        # Verificar si el equipamiento ya está reservado para esa fecha
+        query_check = """
+        SELECT COUNT(*) AS total 
+        FROM reservas_equipamiento 
+        WHERE id_equipamiento = %s AND fecha_reserva = %s
+        """
+        cursor.execute(query_check, (id_equipamiento, fecha_reserva))
+        result = cursor.fetchone()
+
+        if result[0] > 0:
+            return jsonify({"error": "El equipamiento ya está reservado para esa fecha"}), 400
+
+        # Insertar la nueva reserva
+        query_insert = """
+        INSERT INTO reservas_equipamiento (id_equipamiento, ci_alumno, fecha_reserva, id_clase)
+        VALUES (%s, %s, %s, %s)
+        """
+        cursor.execute(query_insert, (id_equipamiento, ci_alumno, fecha_reserva, id_clase))
+        db.commit()
+
+        return jsonify({"message": "Reserva registrada exitosamente"}), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route('/clases/inscritas/<int:ci_alumno>', methods=['GET'])
