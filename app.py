@@ -44,40 +44,40 @@ def login():
     if not correo or not contraseña:
         return jsonify({"error": "Faltan campos obligatorios (correo y contraseña)"}), 400
 
-    # Consulta a la base de datos para verificar las credenciales
-    query = "SELECT l.correo, l.contraseña, a.ci  FROM login l JOIN alumnos a ON l.correo = a.correo WHERE l.correo = %s AND l.contraseña = %s"
-    cursor.execute(query, (correo, contraseña))
+    # Consulta a la base de datos para verificar credenciales en ambas tablas
+    query = """
+        SELECT l.correo, l.contraseña, a.ci, 'student' AS rol
+        FROM login l
+        JOIN alumnos a ON l.correo = a.correo
+        WHERE l.correo = %s AND l.contraseña = %s
+        UNION
+        SELECT l.correo, l.contraseña, i.ci, 'instructor' AS rol
+        FROM login l
+        JOIN instructores i ON l.correo = i.correo
+        WHERE l.correo = %s AND l.contraseña = %s
+    """
+    cursor.execute(query, (correo, contraseña, correo, contraseña))
     usuario = cursor.fetchone()
-    print(cursor)
-    if usuario:
-        # Determinar el rol según el dominio del correo
-        if '@correo.ucu.edu.uy' in correo:
-            rol = 'student'
-        elif '@ucu.edu.uy' in correo:
-            rol = 'instructor'
-        elif '@gmail.com' in correo:
-            rol = 'administrador'
-        else:
-            rol = 'Desconocido'  # O cualquier valor por defecto si no corresponde a ninguno
 
+    if usuario:
         # Generar el token JWT
         payload = {
             "correo": usuario['correo'],
-            "rol": rol,
-            "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=5),  # El token expirará en 1 hora
+            "rol": usuario['rol'],
+            "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=5),  # Expira en 5 horas
             "ci": usuario["ci"]
         }
         token = jwt.encode(payload, SECRET_KEY, algorithm="HS256")
-        cedula = usuario["ci"]
+        
         return jsonify({
             "message": "Login exitoso",
             "token": token,  # Devolver el token generado
-            "role": rol, 
-            "ci": cedula
+            "role": usuario['rol'],
+            "ci": usuario["ci"]
         }), 200
     else:
         return jsonify({"error": "Correo o contraseña inválidos"}), 401
-    
+
 def verificar_token():
     # Obtener el token del encabezado Authorization
     token = request.headers.get('Authorization')
@@ -96,6 +96,42 @@ def verificar_token():
         return jsonify({"error": "El token ha expirado"}), 403
     except jwt.InvalidTokenError:
         return jsonify({"error": "Token inválido"}), 403
+    
+@app.route('/instructor/<string:ci_instructor>/clases', methods=['GET'])
+def obtener_clases_por_instructor(ci_instructor):
+    cursor = db.cursor(dictionary=True)
+    try:
+        # Validar si el instructor existe
+        cursor.execute("SELECT ci FROM instructores WHERE ci = %s", (ci_instructor,))
+        if cursor.fetchone() is None:
+            return jsonify({"error": "Instructor no encontrado"}), 404
+
+        # Consulta para obtener las clases del instructor
+        query = """
+            SELECT c.id, c.fecha_clase, c.tipo_clase, c.dictada, 
+                   a.descripcion AS actividad,
+                   t.hora_inicio AS turno_inicio,
+                   t.hora_fin AS turno_fin
+            FROM clase c
+            JOIN actividades a ON c.id_actividad = a.id
+            JOIN turnos t ON c.id_turno = t.id
+            WHERE c.ci_instructor = %s
+        """
+        cursor.execute(query, (ci_instructor,))
+        clases = cursor.fetchall()
+        for clase in clases:
+            clase['turno_inicio'] = str(clase['turno_inicio'])  # Convierte TIME a string
+            clase['turno_fin'] = str(clase['turno_fin'])
+
+        # No es necesario serializar tiempos si MySQL devuelve cadenas
+        return jsonify(clases), 200
+    
+    except Exception as e:
+        return jsonify({"error": f"Error inesperado: {str(e)}"}), 500
+    finally:
+        cursor.close()
+
+
     
 @app.route('/clases/<int:id_actividad>', methods=['GET'])
 def obtener_clases_por_actividad(id_actividad):
